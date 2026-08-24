@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>广州外资西餐厅交互地图</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: '微软雅黑', sans-serif; background: #F6F3ED; }
+        #map { height: 95vh; width: 100%; }
+        #controls { position: absolute; top: 20px; right: 20px; background: #FFFFFF; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border: 1px solid #E0D8CF; z-index: 999; width: 240px; }
+        .btn { display: block; width: 100%; margin-top: 5px; padding: 5px; cursor: pointer; font-family: '微软雅黑', sans-serif;}
+        #filters { margin-top: 10px; }
+        label { display: block; margin: 5px 0; font-size: 14px; color: #4A423C; }
+        .info { font-size: 12px; color: #807469; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <h4 style="margin:5px 0;">空间集聚 / 热力图</h4>
+        <button class="btn" onclick="toggleHeatmap()">切换热力图模式</button>
+        
+        <h4 style="margin:10px 0;">时空联动 (阶段筛选)</h4>
+        <div class="info">注：无年份餐厅作为底点常驻</div>
+        <button class="btn" onclick="setPhase(0)">显示全部</button>
+        <button class="btn" onclick="setPhase(1)">萌芽集聚期(1974-2008)</button>
+        <button class="btn" onclick="setPhase(2)">扩散扩张期(2009-2020)</button>
+        <button class="btn" onclick="setPhase(3)">多元成熟期(2021-2026)</button>
+
+        <h4 style="margin:10px 0;">语言文化圈筛选</h4>
+        <label><input type="checkbox" id="英语圈" checked onchange="updateLayers()"> 英语圈</label>
+        <label><input type="checkbox" id="法语圈" checked onchange="updateLayers()"> 法语圈</label>
+        <label><input type="checkbox" id="德语圈" checked onchange="updateLayers()"> 德语圈</label>
+        <label><input type="checkbox" id="意大利语圈" checked onchange="updateLayers()"> 意大利语圈</label>
+        <label><input type="checkbox" id="俄语及东欧圈" checked onchange="updateLayers()"> 俄语及东欧圈</label>
+        <label><input type="checkbox" id="伊斯兰（中东文化圈）" checked onchange="updateLayers()"> 中东伊斯兰文化圈</label>
+    </div>
+    <div id="map"></div>
+
+    <script>
+        // 1. 地图底图设置
+        var map = L.map('map').setView([23.12, 113.26], 11);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri'
+        }).addTo(map);
+
+        // 2. 地标关联
+        L.marker([23.14, 113.25]).bindPopup("<b>流花旧展馆（地标）</b>").addTo(map);
+        L.marker([23.10, 113.37]).bindPopup("<b>琶洲新展馆（地标）</b>").addTo(map);
+
+        // 3. 圈层颜色配置
+        var colorMap = {
+            "英语圈": "#B5E8FF", "法语圈": "#FFD1DC", "德语圈": "#FFE7B8",
+            "意大利语圈": "#FFC2B4", "俄语及东欧圈": "#E6C7FF",
+            "伊斯兰（中东文化圈）": "#D1F0B1", "中东伊斯兰文化圈": "#D1F0B1"
+        };
+
+        var geojsonLayer; 
+        var heatLayer;    
+
+        // 4. 读取外部文件（方案一）
+        fetch('restaurants.geojson')
+            .then(response => response.json())
+            .then(data => {
+                // 过滤空坐标，防报错
+                data.features = data.features.filter(f => f.geometry && f.geometry.coordinates);
+
+                // 渲染点位
+                geojsonLayer = L.geoJSON(data, {
+                    pointToLayer: function(feature, latlng) {
+                        var circle = feature.properties["五大文化圈归类"];
+                        var color = colorMap[circle] || "#C8BCAF"; 
+                        return L.circleMarker(latlng, { radius: 6, color: color, fillColor: color, fillOpacity: 0.8 });
+                    },
+                    onEachFeature: function(feature, layer) {
+                        var props = feature.properties;
+                        var year = props["入驻年份"] || "暂无准确数据"; 
+                        layer.bindPopup(`<div style="background:#FFF; padding:10px; border-radius:8px;">
+                            <h3 style="color:#4A423C; margin:0;">${props["餐厅标准名称"]}</h3>
+                            <p style="color:#807469;">圈层：${props["五大文化圈归类"]}</p>
+                            <p style="color:#807469;">入驻年份：${year}</p>
+                        </div>`);
+                    }
+                }).addTo(map);
+
+                // 空间集聚分析（使用大圆叠加模拟热力图，确保不依赖外部网络插件）
+                heatLayer = L.layerGroup();
+                data.features.forEach(function(f) {
+                    L.circle([f.geometry.coordinates[1], f.geometry.coordinates[0]], {
+                        radius: 800, color: '#F2994A', fillColor: '#F2994A', fillOpacity: 0.25, stroke: false
+                    }).addTo(heatLayer);
+                });
+            });
+
+        // 5. 语言文化圈筛选功能
+        function updateLayers() {
+            if (heatmapVisible) return;
+            geojsonLayer.eachLayer(function(layer) {
+                var circle = layer.feature.properties["五大文化圈归类"];
+                var checkbox = document.getElementById(circle);
+                if (checkbox && checkbox.checked) {
+                    layer.addTo(map);
+                } else {
+                    map.removeLayer(layer);
+                }
+            });
+        }
+
+                // 6. 时空联动（阶段筛选）功能
+        var currentPhase = 0;
+        function setPhase(phase) {
+            currentPhase = phase;
+            if (heatmapVisible) return; 
+
+            geojsonLayer.eachLayer(function(layer) {
+                var props = layer.feature.properties;
+                var year = parseFloat(props["入驻年份"]);
+                var shouldShow = false;
+
+                if (phase === 0) {
+                    // 选“显示全部”时，所有点（包括没年份的）都显示
+                    shouldShow = true;
+                } else if (isNaN(year)) {
+                    // 选了具体阶段时，没年份的点直接隐藏，保持严谨
+                    shouldShow = false;
+                } else if (phase === 1 && year >= 1974 && year <= 2008) {
+                    shouldShow = true;
+                } else if (phase === 2 && year >= 2009 && year <= 2020) {
+                    shouldShow = true;
+                } else if (phase === 3 && year >= 2021 && year <= 2026) {
+                    shouldShow = true;
+                }
+
+                if (shouldShow) {
+                    layer.addTo(map);
+                } else {
+                    map.removeLayer(layer);
+                }
+            });
+        }
+
+        // 7. 热力图切换（空间集聚模式切换）
+        var heatmapVisible = false;
+        function toggleHeatmap() {
+            heatmapVisible = !heatmapVisible;
+            if (heatmapVisible) {
+                if (geojsonLayer) map.removeLayer(geojsonLayer); 
+                if (heatLayer) map.addLayer(heatLayer);       
+            } else {
+                if (heatLayer) map.removeLayer(heatLayer);
+                if (geojsonLayer) {
+                    geojsonLayer.addTo(map);
+                    updateLayers(); // 切回时保留圈层筛选
+                    setPhase(currentPhase); // 切回时保留时间阶段筛选
+                }
+            }
+        }
+    </script>
+</body>
+</html>
