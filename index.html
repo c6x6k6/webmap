@@ -48,14 +48,15 @@
         L.marker([23.14, 113.25]).bindPopup("<b>流花旧展馆（地标）</b>").addTo(map);
         L.marker([23.10, 113.37]).bindPopup("<b>琶洲新展馆（地标）</b>").addTo(map);
 
-        // 3. 定义圈层颜色（明亮版）
+        // 3. 圈层颜色配置
+                // 3. 定义圈层颜色（最终定稿：显眼深亮色系）
         var colorMap = {
-            "英语圈": "#4A90D9", 
-            "法语圈": "#E15759", 
-            "德语圈": "#85C1E9", 
-            "意大利语圈": "#F5A623", 
-            "俄语及东欧圈": "#A78BFA", 
-            "伊斯兰（中东文化圈）": "#52B788" 
+            "英语圈": "#4A90D9",        // 天蓝（保持原样）
+            "法语圈": "#E91E63",        // 亮玫红（显眼的粉色）
+            "德语圈": "#F5A623",        // 橙色（从意大利换过来）
+            "意大利语圈": "#D32F2F",    // 正红（显眼的红色）
+            "俄语及东欧圈": "#A78BFA",  // 薰衣草紫（保持原样）
+            "伊斯兰（中东文化圈）": "#52B788" // 薄荷绿（保持原样）
         };
 
         var geojsonLayer; 
@@ -109,7 +110,7 @@
             });
         }
 
-                // 6. 时空联动（阶段筛选）功能
+                        // 6. 时空联动（阶段筛选）功能
         var currentPhase = 0;
         function setPhase(phase) {
             currentPhase = phase;
@@ -117,20 +118,16 @@
 
             geojsonLayer.eachLayer(function(layer) {
                 var props = layer.feature.properties;
-                var year = parseFloat(props["入驻年份"]);
+                var stage = props["发展阶段"]; // 读取的是“发展阶段”字段
                 var shouldShow = false;
 
                 if (phase === 0) {
-                    // 选“显示全部”时，所有点（包括没年份的）都显示
+                    shouldShow = true; // 显示全部
+                } else if (phase === 1 && stage === "萌芽集聚期（1974-2008）") {
                     shouldShow = true;
-                } else if (isNaN(year)) {
-                    // 选了具体阶段时，没年份的点直接隐藏，保持严谨
-                    shouldShow = false;
-                } else if (phase === 1 && year >= 1974 && year <= 2008) {
+                } else if (phase === 2 && stage === "扩散扩张期（2009-2020）") {
                     shouldShow = true;
-                } else if (phase === 2 && year >= 2009 && year <= 2020) {
-                    shouldShow = true;
-                } else if (phase === 3 && year >= 2021 && year <= 2026) {
+                } else if (phase === 3 && stage === "多元成熟期（2021-2026）") {
                     shouldShow = true;
                 }
 
